@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Data (do not upload raw dataset)
+dataset/images/
+dataset/masks/
+
+# Jupyter
+.ipynb_checkpoints/
+
