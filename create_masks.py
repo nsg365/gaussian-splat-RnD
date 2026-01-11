@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 IMAGE_DIR = "dataset/images"
-MASK_DIR = "dataset/masks"
+MASK_DIR = "dataset/masks1"
 TARGET_FILE = "dataset/targets.txt"
 
 os.makedirs(MASK_DIR, exist_ok=True)
