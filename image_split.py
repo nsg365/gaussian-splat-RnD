@@ -5,7 +5,7 @@ from skimage.segmentation import slic
 from skimage.util import img_as_float
 from skimage.color import rgb2lab
 
-IMAGE_DIR = "dataset/IDH_Data_sampled"
+IMAGE_DIR = "dataset/images"
 OUT_DIR = "dataset/intra_segments"
 NUM_SEGMENTS = 40
 COMPACTNESS = 35

@@ -12,7 +12,6 @@ venv/
 # Data (do not upload raw dataset)
 dataset/images/
 dataset/masks1/
-dataset/masks
 dataset/IDH_Data_sampled/
 dataset/intra_segments/
 
