@@ -122,7 +122,6 @@ import os
 import scipy.ndimage as ndimage
 from tqdm import tqdm
 
-# CONFIGURATION
 IMAGE_DIR = "dataset/images"
 MASK_DIR = "dataset/masks1" 
 TARGET_FILE = "dataset/targets.txt"
@@ -131,8 +130,7 @@ TOP_K_RESULTS = 5
 MAX_SPLATS = 300
 SIGMA_CORR = 30.0   # correspondence bandwidth (pixels)
 
-# --- 1. HESSIAN OF GAUSSIAN (HoG) DETECTOR ---
-# This replaces the SIFT detector entirely
+#HoG
 
 def detect_hessian_blobs(image_gray, mask=None, threshold=2000):
     """
@@ -141,26 +139,24 @@ def detect_hessian_blobs(image_gray, mask=None, threshold=2000):
     """
     splats = []
     
-    # We scan across multiple scales (sigmas) to find blobs of different sizes
+
     scales = [1.0, 3.0, 5.0, 7.0] 
     
     for sigma in scales:
-        # Kernel size is roughly 6x sigma
+        #Kernel Size
         k = int(6 * sigma) | 1 
         if k < 3: k = 3
         
-        # 1. Gaussian Blur
+        # Gaussian Blur
         blurred = cv2.GaussianBlur(image_gray, (k, k), sigma)
         
-        # 2. Compute Hessian Gradients (Second Derivatives)
+        # Compute Hessian Gradients (Second Derivatives)
         Ixx = cv2.Sobel(blurred, cv2.CV_32F, 2, 0, ksize=3)
         Iyy = cv2.Sobel(blurred, cv2.CV_32F, 0, 2, ksize=3)
         Ixy = cv2.Sobel(blurred, cv2.CV_32F, 1, 1, ksize=3)
         
-        # 3. Determinant of Hessian
         det_H = (Ixx * Iyy) - (Ixy ** 2)
         
-        # 4. Find Local Peaks (Non-Maximum Suppression)
         local_max = ndimage.maximum_filter(det_H, size=5)
         peaks = (det_H == local_max) & (det_H > threshold)
         
@@ -184,15 +180,12 @@ def extract_gaussian_splats(image, mask=None, max_splats=MAX_SPLATS):
     if image is None: return []
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # Run the custom HoG detector
     raw_splats = detect_hessian_blobs(gray, mask, threshold=5000)
 
-    # Sort by weight (strongest blobs first)
     raw_splats.sort(key=lambda s: s[3], reverse=True)
     
     return raw_splats[:max_splats]
 
-# --- 2. MATCHING LOGIC (ENERGY MINIMIZATION) ---
 
 def soft_gaussian_energy(A, B, sigma=SIGMA_CORR):
     """
@@ -216,19 +209,14 @@ def soft_gaussian_energy(A, B, sigma=SIGMA_CORR):
     energy = np.sum(P * D2)
     return energy
 
-# --- 3. MAIN EXECUTION ---
-
-# Load Targets
 with open(TARGET_FILE, "r") as f:
     targets = [l.strip() for l in f if l.strip()]
 
-# Load Image List
 all_images = sorted([
     f for f in os.listdir(IMAGE_DIR)
     if f.lower().endswith((".jpg", ".png", ".jpeg"))
 ])
 
-# Precompute source splats
 print("Extracting splats for source images (Using HoG)...")
 source_splats = {}
 
@@ -238,7 +226,6 @@ for img_name in tqdm(all_images):
         continue
     source_splats[img_name] = extract_gaussian_splats(img)
 
-# Run Retrieval
 for target in targets:
     print(f"\n=== Target: {target} ===")
 
@@ -256,7 +243,6 @@ for target in targets:
         print(f"  Error: Missing mask {mask_path}")
         continue
 
-    # Extract target features (HoG)
     target_splats = extract_gaussian_splats(image, mask)
 
     energies = []

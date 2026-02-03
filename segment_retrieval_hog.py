@@ -5,7 +5,6 @@ import os
 import scipy.ndimage as ndimage
 from tqdm import tqdm
 
-# --- CONFIGURATION ---
 IMAGE_DIR = "dataset/images"
 MASK_DIR = "dataset/masks1"             
 SEGMENT_BASE_DIR = "dataset/intra_segments" 
@@ -16,7 +15,7 @@ MAX_SPLATS_TARGET = 300  # Max blobs to track on the target
 MAX_SPLATS_SEGMENT = 100 # Segments are small, so we need fewer blobs
 MAX_DIST = 50
 
-# --- 1. HESSIAN OF GAUSSIAN (HoG) DETECTOR ---
+# HoG
 def detect_hessian_blobs(image_gray, mask=None, threshold=2000):
     splats = []
     # Segments are small, so we focus on smaller scales
@@ -55,15 +54,13 @@ def extract_hog_features(image, mask=None, max_splats=100):
     raw_splats.sort(key=lambda s: s[3], reverse=True)
     return raw_splats[:max_splats]
 
-# --- 2. SIMILARITY SCORE ---
+#similarity score
 def splat_similarity(A, B):
     # A = Target Splats, B = Segment Splats
     score = 0.0
     for xa, ya, sa, wa in A:
         best_match = 0.0
         for xb, yb, sb, wb in B:
-            # We relax the distance constraint because segments can be anywhere
-            # But we check if the "scale" (sigma) matches
             if abs(sa - sb) > 2.0: 
                 continue
                 
@@ -73,7 +70,6 @@ def splat_similarity(A, B):
         score += best_match
     return score
 
-# --- 3. DATABASE LOADER (WITH PROGRESS BAR) ---
 def load_segment_database():
     print(f"Scanning files in {SEGMENT_BASE_DIR}...")
     
@@ -81,7 +77,6 @@ def load_segment_database():
         print("Error: Segment folder not found. Did you run image_split.py?")
         return {}, {}
 
-    # 1. First, just collect all file paths (fast)
     all_segment_files = []
     for root, dirs, files in os.walk(SEGMENT_BASE_DIR):
         for file in files:
@@ -93,33 +88,28 @@ def load_segment_database():
     db_splats = {}
     db_images = {} 
     
-    # 2. Now process them with a progress bar
     for full_path in tqdm(all_segment_files):
-        # Create ID: "ImageName_RegionID"
+        # Create ID
         parent_folder = os.path.basename(os.path.dirname(os.path.dirname(full_path)))
         file_name = os.path.basename(full_path)
         seg_id = f"{parent_folder}_{file_name}"
         
         img = cv2.imread(full_path)
         if img is not None:
-            # Extract features
             feats = extract_hog_features(img, max_splats=MAX_SPLATS_SEGMENT)
-            if len(feats) > 2: # Only keep segments with actual details
+            if len(feats) > 2: 
                 db_splats[seg_id] = feats
                 db_images[seg_id] = img
                         
     print(f"Successfully loaded {len(db_splats)} useful segments.")
     return db_splats, db_images
 
-# --- 4. MAIN EXECUTION ---
 if __name__ == "__main__":
-    # Load Data
     segment_feats, segment_imgs = load_segment_database()
     
     with open(TARGET_FILE, "r") as f:
         targets = [l.strip() for l in f if l.strip()]
 
-    # Process each target
     for target_name in targets:
         print(f"\nProcessing Target: {target_name}...")
         
@@ -136,17 +126,14 @@ if __name__ == "__main__":
         # Extract features from target (Target has more features than segments)
         target_splats = extract_hog_features(target_img, target_mask, max_splats=MAX_SPLATS_TARGET)
         
-        # Compare against all segments
         scores = []
         for seg_id, seg_splats in segment_feats.items():
-            # Don't match the target image's own segments against itself
             if target_name.rsplit(".",1)[0] in seg_id:
                 continue
                 
             score = splat_similarity(target_splats, seg_splats)
             scores.append((seg_id, score))
             
-        # Sort and Normalize
         scores.sort(key=lambda x: x[1], reverse=True)
         
         if not scores:
@@ -156,10 +143,9 @@ if __name__ == "__main__":
         max_score = scores[0][1] if scores[0][1] > 0 else 1.0
         top_results = scores[:TOP_K]
 
-        # --- VISUALIZATION ---
+        # Visualization
         fig, axes = plt.subplots(1, TOP_K + 1, figsize=(18, 5))
         
-        # 1. Target with Mask
         overlay = target_img.copy()
         if target_mask is not None:
             overlay[target_mask == 255] = (0.3 * overlay[target_mask == 255] + 0.7 * np.array([255,0,0])).astype(np.uint8)
@@ -168,7 +154,6 @@ if __name__ == "__main__":
         axes[0].set_title(f"Target\n{target_name}")
         axes[0].axis("off")
         
-        # 2. Top Matching Segments
         for i, (seg_id, raw_score) in enumerate(top_results):
             norm_score = (raw_score / max_score) * 100.0
             seg_img = segment_imgs[seg_id]
