@@ -3,37 +3,43 @@ import cv2
 import numpy as np
 from skimage.segmentation import slic
 from skimage.util import img_as_float
-from skimage.color import rgb2lab
 
+# ---------------- CONFIG ---------------- #
 IMAGE_DIR = "dataset/images"
 OUT_DIR = "dataset/intra_segments"
+
 NUM_SEGMENTS = 40
 COMPACTNESS = 35
 MIN_REGION_AREA = 5000
+MIN_EDGE_DENSITY = 0.02   # skip flat regions
+HOG_SIZE = (128, 128)
+# ---------------------------------------- #
 
 os.makedirs(OUT_DIR, exist_ok=True)
+
+def compute_edge_density(gray):
+    edges = cv2.Canny(gray, 80, 160)
+    return np.sum(edges > 0) / edges.size
 
 def segment_image(image_path, out_base):
     img = cv2.imread(image_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_float = img_as_float(img_rgb)
 
-    # SLIC segmentation
+    # SLIC segmentation (coarse + connected)
     segments = slic(
         img_float,
         n_segments=NUM_SEGMENTS,
         compactness=COMPACTNESS,
-        start_label=0
+        start_label=0,
+        enforce_connectivity=True,
+        min_size_factor=0.5
     )
 
-    h, w = segments.shape
     unique_segments = np.unique(segments)
 
-    seg_dir = os.path.join(out_base, "regions")
-    mask_dir = os.path.join(out_base, "masks")
-
+    seg_dir = os.path.join(out_base, "hog_regions")
     os.makedirs(seg_dir, exist_ok=True)
-    os.makedirs(mask_dir, exist_ok=True)
 
     for seg_id in unique_segments:
         mask = (segments == seg_id).astype(np.uint8)
@@ -41,16 +47,28 @@ def segment_image(image_path, out_base):
         if np.sum(mask) < MIN_REGION_AREA:
             continue
 
-        # save mask
-        mask_path = os.path.join(mask_dir, f"mask_{seg_id}.png")
-        cv2.imwrite(mask_path, mask * 255)
+        # bounding box of segment
+        ys, xs = np.where(mask == 1)
+        y1, y2 = ys.min(), ys.max()
+        x1, x2 = xs.min(), xs.max()
 
-        # extract region
-        region = img.copy()
-        region[mask == 0] = 0
+        crop = img[y1:y2+1, x1:x2+1]
+        crop_mask = mask[y1:y2+1, x1:x2+1]
 
-        region_path = os.path.join(seg_dir, f"region_{seg_id}.png")
-        cv2.imwrite(region_path, region)
+        # apply mask (remove background)
+        crop[crop_mask == 0] = 0
+
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+        # filter flat regions (important for HOG)
+        if compute_edge_density(gray) < MIN_EDGE_DENSITY:
+            continue
+
+        # resize to HOG window
+        hog_ready = cv2.resize(gray, HOG_SIZE)
+
+        out_path = os.path.join(seg_dir, f"region_{seg_id}.png")
+        cv2.imwrite(out_path, hog_ready)
 
 def main():
     for img_name in os.listdir(IMAGE_DIR):
@@ -61,7 +79,7 @@ def main():
         base_name = os.path.splitext(img_name)[0]
         out_base = os.path.join(OUT_DIR, base_name)
 
-        print(f"[+] Segmenting {img_name}")
+        print(f"[+] Processing {img_name}")
         segment_image(img_path, out_base)
 
 if __name__ == "__main__":
